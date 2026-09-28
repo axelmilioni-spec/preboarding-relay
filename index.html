@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Ton espace d'arrivée — LumApps</title>
+<!--
+  Page relais du préboarding. Le mail J-7 pointe ici, avec dans le fragment `#` (jamais
+  envoyé à l'hébergeur) l'organisation, l'adresse de l'arrivant, sa page et le service de
+  login. Au clic, la page demande à LumApps d'envoyer un lien de connexion neuf vers cette
+  adresse, avec la page pour destination.
+
+  Pourquoi un relais : le lien de connexion LumApps expire 10 minutes après son envoi, et ce
+  délai n'est pas réglable. Il ne peut donc partir qu'au moment où l'arrivant le demande.
+
+  Rien de secret ici : l'endpoint est celui de l'écran de login, anonyme. Le lien du mail
+  ne donne accès à rien — il fait seulement envoyer un mail à la boîte de l'arrivant.
+  Un bouton plutôt qu'un appel au chargement : les scanners de liens des messageries
+  ouvrent les pages, ils ne cliquent pas.
+-->
+<style>
+  :root {
+    --ink: #16202B; --soft: #4A5868; --faint: #7C8B9C; --rule: #DFE4E9;
+    --card: #FFFFFF; --ground: #F4F6F8; --accent: #1B4D8F; --accent-bg: #E9F0F9;
+    --ok: #2C6A4A; --ok-bg: #E5F0E9; --wait: #8A5A12; --wait-bg: #F7EEDD;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--ground); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    display: flex; align-items: center; justify-content: center; padding: 24px 16px;
+  }
+  main {
+    width: 100%; max-width: 480px; background: var(--card); border: 1px solid var(--rule);
+    border-radius: 12px; overflow: hidden;
+  }
+  header { background: var(--ink); color: #fff; padding: 28px 28px 24px; }
+  .kicker {
+    font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #8FA6C4;
+    font-weight: 700; margin-bottom: 10px;
+  }
+  h1 { margin: 0; font-size: 24px; line-height: 1.25; }
+  section { padding: 24px 28px 28px; }
+  p { margin: 0 0 16px; font-size: 15px; line-height: 1.6; color: var(--soft); }
+  b { color: var(--ink); }
+  button {
+    width: 100%; border: 0; border-radius: 8px; background: var(--accent); color: #fff;
+    font: inherit; font-size: 16px; font-weight: 700; padding: 15px 20px; cursor: pointer;
+  }
+  button[disabled] { opacity: .55; cursor: default; }
+  .note {
+    margin-top: 18px; padding: 14px 16px; border-radius: 8px; font-size: 14px; line-height: 1.55;
+  }
+  .note.ok { background: var(--ok-bg); color: var(--ok); }
+  .note.err { background: var(--wait-bg); color: var(--wait); }
+  .secondary {
+    margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--rule);
+    font-size: 13.5px; color: var(--faint);
+  }
+  .secondary a { color: var(--accent); font-weight: 600; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="kicker">Ton arrivée chez LumApps</div>
+    <h1 id="title">Ton espace d'arrivée</h1>
+  </header>
+  <section>
+    <div id="ready">
+      <p>
+        Pour ouvrir ton espace, on t'envoie un lien de connexion à
+        <b id="masked"></b>. Il est valable 10 minutes et t'amène directement sur ta page.
+      </p>
+      <button id="send" type="button">Recevoir mon lien de connexion</button>
+      <div id="status" class="note" role="status" hidden></div>
+      <div class="secondary">
+        Déjà connecté sur ce navigateur ? <a id="direct" href="#">Ouvrir mon espace</a>
+      </div>
+    </div>
+    <div id="invalid" hidden>
+      <p>Ce lien est incomplet. Rouvre-le depuis le mail reçu, sans le modifier.</p>
+      <p>Si le problème continue, réponds à ce mail : l'équipe RH t'en renverra un.</p>
+    </div>
+  </section>
+</main>
+<script>
+(function () {
+  "use strict";
+
+  // Le mail encode {o: org, e: email, n: page, l: service de login, p: prénom} en base64url.
+  function decode(fragment) {
+    try {
+      var b64 = fragment.replace(/-/g, "+").replace(/_/g, "/");
+      return JSON.parse(atob(b64 + "===".slice((b64.length + 3) % 4)));
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function httpsUrl(value, hostSuffix) {
+    try {
+      var url = new URL(value);
+      if (url.protocol !== "https:") return null;
+      if (hostSuffix && url.hostname !== hostSuffix.slice(1) && !url.hostname.endsWith(hostSuffix)) return null;
+      return url;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function mask(email) {
+    var at = email.indexOf("@");
+    return email.charAt(0) + "•••" + email.slice(at);
+  }
+
+  var d = decode(location.hash.slice(1));
+  var valid = d
+    && /^\d+$/.test(String(d.o))
+    && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(d.e))
+    && httpsUrl(d.n)
+    && httpsUrl(d.l, ".lumapps.com");
+
+  if (!valid) {
+    document.getElementById("ready").hidden = true;
+    document.getElementById("invalid").hidden = false;
+    return;
+  }
+
+  if (d.p) document.getElementById("title").textContent = "Bonjour " + d.p + " !";
+  document.getElementById("masked").textContent = mask(d.e);
+  document.getElementById("direct").href = d.n;
+
+  var button = document.getElementById("send");
+  var status = document.getElementById("status");
+
+  function show(kind, text) {
+    status.className = "note " + kind;
+    status.textContent = text;
+    status.hidden = false;
+  }
+
+  // Syn accepte 5 demandes par minute pour une même adresse : on laisse passer une minute
+  // avant de proposer d'en redemander un.
+  function cooldown(seconds) {
+    button.disabled = true;
+    var left = seconds;
+    var timer = setInterval(function () {
+      left -= 1;
+      button.textContent = "Renvoyer un lien (" + left + " s)";
+      if (left <= 0) {
+        clearInterval(timer);
+        button.disabled = false;
+        button.textContent = "Renvoyer un lien";
+      }
+    }, 1000);
+  }
+
+  button.addEventListener("click", function () {
+    button.disabled = true;
+    button.textContent = "Envoi en cours…";
+    status.hidden = true;
+    fetch(d.l.replace(/\/$/, "") + "/v1/organizations/" + d.o + "/authenticated-magic-links", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userEmail: d.e, nextUrl: d.n }),
+      credentials: "omit",
+    })
+      .then(function (res) {
+        if (res.ok) {
+          // Syn répond 204 même quand il n'envoie rien (adresse inconnue, compte coupé) :
+          // seule la boîte de réception dit si le mail est parti.
+          show("ok", "C'est parti : un lien de connexion arrive à " + mask(d.e)
+            + ". Ouvre-le dans les 10 minutes. Pas reçu d'ici 2 minutes ? Regarde dans les "
+            + "spams, puis redemande-le.");
+          cooldown(60);
+        } else if (res.status === 429) {
+          show("err", "Trop de demandes d'un coup. Attends une minute, puis réessaie.");
+          cooldown(60);
+        } else {
+          show("err", "LumApps n'a pas accepté la demande (code " + res.status + "). "
+            + "Réessaie plus tard, ou réponds au mail reçu pour prévenir l'équipe RH.");
+          button.disabled = false;
+          button.textContent = "Réessayer";
+        }
+      })
+      .catch(function () {
+        show("err", "Impossible de joindre LumApps. Vérifie ta connexion, puis réessaie.");
+        button.disabled = false;
+        button.textContent = "Réessayer";
+      });
+  });
+})();
+</script>
+</body>
+</html>
