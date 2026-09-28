@@ -72,7 +72,7 @@
   <section>
     <div id="ready">
       <p>
-        Pour ouvrir ton espace, on t'envoie un lien de connexion à
+        Pour ouvrir ton espace, on peut t'envoyer un lien de connexion à
         <b id="masked"></b>. Il est valable 10 minutes et t'amène directement sur ta page.
       </p>
       <button id="send" type="button">Recevoir mon lien de connexion</button>
@@ -117,12 +117,16 @@
     return email.charAt(0) + "•••" + email.slice(at);
   }
 
+  // La page et le service de login doivent être chez LumApps : sinon un fragment forgé
+  // ferait de « Ouvrir mon espace » un lien vers n'importe quel site, sous le logo LumApps.
   var d = decode(location.hash.slice(1));
+  var next = d && httpsUrl(d.n, ".lumapps.com");
+  var login = d && httpsUrl(d.l, ".lumapps.com");
   var valid = d
     && /^\d+$/.test(String(d.o))
     && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(d.e))
-    && httpsUrl(d.n)
-    && httpsUrl(d.l, ".lumapps.com");
+    && next
+    && login;
 
   if (!valid) {
     document.getElementById("ready").hidden = true;
@@ -130,9 +134,12 @@
     return;
   }
 
-  if (d.p) document.getElementById("title").textContent = "Bonjour " + d.p + " !";
+  // Un prénom, pas une phrase : au-delà, le titre servirait à afficher n'importe quel texte.
+  if (d.p && String(d.p).length <= 40) {
+    document.getElementById("title").textContent = "Bonjour " + d.p + " !";
+  }
   document.getElementById("masked").textContent = mask(d.e);
-  document.getElementById("direct").href = d.n;
+  document.getElementById("direct").href = next.href;
 
   var button = document.getElementById("send");
   var status = document.getElementById("status");
@@ -163,10 +170,10 @@
     button.disabled = true;
     button.textContent = "Envoi en cours…";
     status.hidden = true;
-    fetch(d.l.replace(/\/$/, "") + "/v1/organizations/" + d.o + "/authenticated-magic-links", {
+    fetch(login.origin + "/v1/organizations/" + d.o + "/authenticated-magic-links", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userEmail: d.e, nextUrl: d.n }),
+      body: JSON.stringify({ userEmail: d.e, nextUrl: next.href }),
       credentials: "omit",
     })
       .then(function (res) {
